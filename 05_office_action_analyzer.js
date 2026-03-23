@@ -23,12 +23,62 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import "dotenv/config";
+import fs from "fs";
+import path from "path";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// ── FILE LOADER ───────────────────────────────────────────────────────────
+/**
+ * Load office action text from a file path.
+ *
+ * Supported formats:
+ *   .txt  — read as UTF-8 plain text
+ *   .pdf  — extract text via pdf-parse
+ *   .docx — extract text via mammoth
+ *
+ * @param {string} filePath  Absolute or relative path to the office action file.
+ * @returns {Promise<string>} Extracted plain text content.
+ * @throws {Error} If the file format is unsupported or the file cannot be read.
+ */
+export async function loadOfficeAction(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+
+  if (ext === ".txt") {
+    try {
+      return fs.readFileSync(filePath, "utf-8");
+    } catch (err) {
+      throw new Error(`Failed to read .txt file "${filePath}": ${err.message}`);
+    }
+  }
+
+  if (ext === ".pdf") {
+    const { default: pdfParse } = await import("pdf-parse");
+    let buffer;
+    try {
+      buffer = fs.readFileSync(filePath);
+    } catch (err) {
+      throw new Error(`Failed to read .pdf file "${filePath}": ${err.message}`);
+    }
+    const data = await pdfParse(buffer);
+    return data.text;
+  }
+
+  if (ext === ".docx") {
+    const mammoth = await import("mammoth");
+    const result = await mammoth.extractRawText({ path: filePath });
+    return result.value;
+  }
+
+  throw new Error(
+    `Unsupported file format "${ext}". Supported formats: .txt, .pdf, .docx`
+  );
+}
+
 // ── SAMPLE OFFICE ACTION ──────────────────────────────────────────────────
-// In production: replace with fs.readFileSync("office_action.txt", "utf-8")
-// or accept a PDF path and extract text with a PDF library.
+// Used as the default when no file path is provided.
+// Pass a file path as the first CLI argument to analyse a real office action:
+//   node 05_office_action_analyzer.js path/to/office_action.pdf
 const OFFICE_ACTION = `
 APPLICATION NUMBER: 17/123,456
 FILING DATE: March 15, 2022
@@ -105,7 +155,7 @@ Important constraints:
 `.trim();
 
 // ── STEP 1: PARSE AND CLASSIFY ────────────────────────────────────────────
-async function parseAndClassify(officeAction) {
+export async function parseAndClassify(officeAction) {
   console.log("⏳ Step 1: Parsing and classifying rejections...\n");
 
   const response = await client.messages.create({
@@ -159,7 +209,7 @@ ${officeAction}`,
 }
 
 // ── STEP 2: ANALYZE EACH REJECTION ───────────────────────────────────────
-async function analyzeRejection(rejection, officeActionText) {
+export async function analyzeRejection(rejection, officeActionText) {
   const response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 600,
@@ -200,7 +250,7 @@ Respond with valid JSON only. No preamble, no markdown fences.`,
 }
 
 // ── STEP 3: GENERATE RESPONSE STRATEGY ───────────────────────────────────
-async function generateResponseStrategy(rejection, analysis, officeActionText) {
+export async function generateResponseStrategy(rejection, analysis, officeActionText) {
   const response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 800,
@@ -234,7 +284,7 @@ Be specific and actionable. Reference actual claim numbers and prior art referen
 }
 
 // ── STEP 4: SUGGEST CLAIM AMENDMENTS ─────────────────────────────────────
-async function suggestClaimAmendments(rejection, officeActionText) {
+export async function suggestClaimAmendments(rejection, officeActionText) {
   // Only generate amendment suggestions for 103 and 112 rejections
   if (!["103", "112"].includes(rejection.statute)) return null;
 
@@ -266,7 +316,7 @@ Be concrete. If you cannot suggest a specific amendment without seeing the full 
 }
 
 // ── STEP 5: CONSOLIDATED RESPONSE OUTLINE ─────────────────────────────────
-async function generateResponseOutline(parsed, analyses, strategies) {
+export async function generateResponseOutline(parsed, analyses, strategies) {
   const summary = {
     rejections: parsed.rejections.map((r) => ({
       id: r.id,
@@ -307,7 +357,7 @@ Write in professional patent prosecution style.`,
 }
 
 // ── MAIN ──────────────────────────────────────────────────────────────────
-async function main() {
+export async function main() {
   console.log("=".repeat(60));
   console.log("OFFICE ACTION ANALYZER & RESPONSE STRATEGIST");
   console.log("=".repeat(60));
@@ -316,8 +366,24 @@ async function main() {
       "   All responses must be reviewed and filed by a registered patent practitioner.\n"
   );
 
+  // Resolve office action text: use a supplied file path or fall back to the
+  // built-in sample.  Supported file types: .txt, .pdf, .docx
+  const filePath = process.argv[2];
+  let officeActionText;
+  if (filePath) {
+    console.log(`📂 Loading office action from: ${filePath}\n`);
+    try {
+      officeActionText = await loadOfficeAction(filePath);
+    } catch (err) {
+      console.error(`❌ Failed to load file: ${err.message}`);
+      return;
+    }
+  } else {
+    officeActionText = OFFICE_ACTION;
+  }
+
   // Step 1: Parse
-  const parseResult = await parseAndClassify(OFFICE_ACTION);
+  const parseResult = await parseAndClassify(officeActionText);
   if (!parseResult.success) {
     console.error("Failed to parse office action:", parseResult.raw);
     return;
@@ -342,7 +408,7 @@ async function main() {
     console.log(`📋 ${rejection.id} — § ${rejection.subsection} | Claims: ${rejection.claims_affected.join(", ")}`);
 
     console.log(`   ⏳ Analyzing examiner's position...`);
-    const analysis = await analyzeRejection(rejection, OFFICE_ACTION);
+    const analysis = await analyzeRejection(rejection, officeActionText);
     analyses[rejection.id] = analysis;
     console.log(`   Examiner strength: ${analysis.examiner_argument_strength?.toUpperCase()}`);
     console.log(`   Overcome by argument alone: ${analysis.can_overcome_by_argument_alone ? "Yes" : "No"}`);
@@ -351,14 +417,14 @@ async function main() {
     }
 
     console.log(`\n   ⏳ Generating response strategy...`);
-    const strategy = await generateResponseStrategy(rejection, analysis, OFFICE_ACTION);
+    const strategy = await generateResponseStrategy(rejection, analysis, officeActionText);
     strategies[rejection.id] = strategy;
     console.log(`\n   📝 Response Strategy for ${rejection.id}:`);
     strategy.split("\n").forEach((line) => console.log(`   ${line}`));
 
     if (["103", "112"].includes(rejection.statute)) {
       console.log(`\n   ⏳ Generating claim amendment suggestions...`);
-      const amendment = await suggestClaimAmendments(rejection, OFFICE_ACTION);
+      const amendment = await suggestClaimAmendments(rejection, officeActionText);
       if (amendment) {
         amendments[rejection.id] = amendment;
         console.log(`\n   ✏️  Amendment Suggestions for ${rejection.id}:`);
@@ -393,4 +459,7 @@ async function main() {
   );
 }
 
-main().catch(console.error);
+/* istanbul ignore next */
+if (process.env.NODE_ENV !== "test") {
+  main().catch(console.error);
+}

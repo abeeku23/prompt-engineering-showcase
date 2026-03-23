@@ -8,6 +8,7 @@
     "02": "node 02-chain-of-thought.js",
     "03": "node 03-prompt-chaining.js",
     "04": "node 04-system-prompt-and-output-control.js",
+    "05": "node 05_office_action_analyzer.js",
     "test": "jest --config jest.config.cjs",
     "test:coverage": "jest --config jest.config.cjs --coverage"
   },
@@ -22,7 +23,9 @@
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
-    "dotenv": "^16.0.0"
+    "dotenv": "^16.0.0",
+    "mammoth": "^1.12.0",
+    "pdf-parse": "^2.4.5"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",
