@@ -28,6 +28,114 @@ import path from "path";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// ── PATENTSVIEW API ────────────────────────────────────────────────────────
+const PATENTSVIEW_BASE_URL = "https://search.patentsview.org/api/v1/patent";
+
+// Maximum number of characters to include from a patent abstract when building
+// the enrichment context for a rejection analysis prompt.
+const MAX_ABSTRACT_PREVIEW_LENGTH = 300;
+
+// ── MPEP CONTEXT ──────────────────────────────────────────────────────────
+/**
+ * Return a formatted block of key MPEP section references that govern
+ * examination under the given rejection statute.  The text is injected
+ * into the analyzeRejection prompt so Claude can cite precise MPEP
+ * authority rather than relying solely on training-data recall.
+ *
+ * @param {string} statute - "101" | "102" | "103" | "112"
+ * @returns {string} Formatted MPEP reference block, or "" for unknown statutes.
+ */
+export function getMpepContext(statute) {
+  const sections = {
+    "101": [
+      "MPEP § 2104 — Patent-Eligible Subject Matter (35 U.S.C. § 101)",
+      "MPEP § 2106 — Patent Subject Matter Eligibility (Alice/Mayo two-step framework)",
+      "MPEP § 2106.04 — Abstract Ideas (judicial exception)",
+      "MPEP § 2106.05 — Significantly More (inventive concept)",
+    ],
+    "102": [
+      "MPEP § 2131 — Anticipation — Apparatus/Method Claims",
+      "MPEP § 2132 — 35 U.S.C. § 102(a) Rejections",
+      "MPEP § 2133 — 35 U.S.C. § 102(b) Rejections",
+      "MPEP § 2151 — Overview of the Prior Art Provisions of 35 U.S.C. § 102",
+    ],
+    "103": [
+      "MPEP § 2141 — Examination Guidelines for Determining Obviousness",
+      "MPEP § 2143 — Examples of Basic Requirements of a Prima Facie Case of Obviousness",
+      "MPEP § 2145 — Consideration of Applicant's Remarks",
+      "MPEP § 716 — Affidavits or Declarations Under 37 C.F.R. § 1.132",
+    ],
+    "112": [
+      "MPEP § 2161 — Three Separate Requirements for Specification (35 U.S.C. § 112(a))",
+      "MPEP § 2171 — Two Separate Requirements for Claims (35 U.S.C. § 112(b))",
+      "MPEP § 2173 — Claims Must Particularly Point Out and Distinctly Claim the Invention",
+      "MPEP § 2173.05(b) — Relative Terminology (indefiniteness)",
+    ],
+  };
+
+  const relevant = sections[statute];
+  if (!relevant) return "";
+  return `Relevant MPEP Sections for § ${statute}:\n${relevant.map((s) => `  • ${s}`).join("\n")}`;
+}
+
+// ── PATENTSVIEW PRIOR-ART LOOKUP ──────────────────────────────────────────
+/**
+ * Look up a US patent by number using the PatentsView API (USPTO-backed,
+ * free, no authentication required).  Returns the patent's title and
+ * abstract so the examiner's prior-art citations can be verified and
+ * enriched before the rejection analysis step.
+ *
+ * @param {string} patentNumber - e.g. "10,123,456" or "US10123456"
+ * @returns {Promise<{patent_id: string, patent_title: string,
+ *                    patent_abstract: string}|null>}
+ *   Patent metadata, or null when the patent is not found or the request
+ *   fails (network error, API unavailable, etc.).
+ */
+export async function lookupPatentPriorArt(patentNumber) {
+  // Normalise: strip optional "US" prefix, spaces, and commas → "10123456"
+  const normalized = patentNumber.replace(/^US\s*/i, "").replace(/[\s,]/g, "");
+
+  try {
+    const res = await fetch(
+      `${PATENTSVIEW_BASE_URL}/${normalized}/?fields=patent_title,patent_abstract`,
+      { headers: { Accept: "application/json" } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.patent ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Batch-fetch PatentsView metadata for every prior-art reference that
+ * appears across all rejections.  References that don't contain a
+ * recognisable US patent number are silently skipped.
+ *
+ * @param {Array<{prior_art_references?: string[]}>} rejections
+ * @returns {Promise<Object>} Map of reference string → patent metadata.
+ */
+export async function fetchPriorArtDetails(rejections) {
+  const allRefs = [
+    ...new Set(rejections.flatMap((r) => r.prior_art_references ?? [])),
+  ];
+
+  const results = {};
+  await Promise.all(
+    allRefs.map(async (ref) => {
+      // Extract the first run of digits (and commas) that looks like a patent
+      // number, e.g. "Johnson (US 10,123,456)" → "10,123,456"
+      const match = ref.match(/\d[\d,]+/);
+      if (!match) return;
+      const data = await lookupPatentPriorArt(match[0]);
+      if (data) results[ref] = data;
+    })
+  );
+
+  return results;
+}
+
 // ── FILE LOADER ───────────────────────────────────────────────────────────
 /**
  * Load office action text from a file path.
@@ -209,7 +317,7 @@ ${officeAction}`,
 }
 
 // ── STEP 2: ANALYZE EACH REJECTION ───────────────────────────────────────
-export async function analyzeRejection(rejection, officeActionText) {
+export async function analyzeRejection(rejection, officeActionText, enrichmentContext = "") {
   const response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 600,
@@ -222,7 +330,7 @@ export async function analyzeRejection(rejection, officeActionText) {
 Rejection: ${JSON.stringify(rejection, null, 2)}
 
 Full Office Action Context:
-${officeActionText}
+${officeActionText}${enrichmentContext ? `\n\nAdditional Context:\n${enrichmentContext}` : ""}
 
 Provide your analysis in this JSON format:
 {
@@ -398,6 +506,19 @@ export async function main() {
     `   Claims affected: ${[...new Set(parsed.rejections.flatMap((r) => r.claims_affected))].sort((a, b) => a - b).join(", ")}\n`
   );
 
+  // Fetch prior-art metadata from PatentsView (runs in parallel for all
+  // cited patents; results are cached and reused across rejection steps).
+  console.log("⏳ Fetching prior art details from PatentsView API...\n");
+  const priorArtCache = await fetchPriorArtDetails(parsed.rejections);
+  const priorArtCount = Object.keys(priorArtCache).length;
+  if (priorArtCount > 0) {
+    console.log(`✅ Retrieved details for ${priorArtCount} prior art reference(s)\n`);
+  } else {
+    console.log(
+      "ℹ️  No prior art details retrieved (PatentsView unavailable or no cited patents)\n"
+    );
+  }
+
   // Step 2 & 3: Analyze + strategize per rejection
   const analyses = {};
   const strategies = {};
@@ -407,8 +528,26 @@ export async function main() {
     console.log(`${"─".repeat(60)}`);
     console.log(`📋 ${rejection.id} — § ${rejection.subsection} | Claims: ${rejection.claims_affected.join(", ")}`);
 
+    // Build enrichment context: MPEP section references + prior art details
+    const mpepContext = getMpepContext(rejection.statute);
+    const relevantPriorArt = (rejection.prior_art_references ?? [])
+      .filter((ref) => priorArtCache[ref])
+      .map(
+        (ref) =>
+          `${ref}: ${priorArtCache[ref].patent_title} — ${
+            (priorArtCache[ref].patent_abstract ?? "").slice(0, MAX_ABSTRACT_PREVIEW_LENGTH)
+          }...`
+      )
+      .join("\n");
+    const enrichmentContext = [
+      mpepContext,
+      relevantPriorArt ? `\nPrior Art Details (from PatentsView):\n${relevantPriorArt}` : "",
+    ]
+      .join("\n")
+      .trim();
+
     console.log(`   ⏳ Analyzing examiner's position...`);
-    const analysis = await analyzeRejection(rejection, officeActionText);
+    const analysis = await analyzeRejection(rejection, officeActionText, enrichmentContext);
     analyses[rejection.id] = analysis;
     console.log(`   Examiner strength: ${analysis.examiner_argument_strength?.toUpperCase()}`);
     console.log(`   Overcome by argument alone: ${analysis.can_overcome_by_argument_alone ? "Yes" : "No"}`);
@@ -450,6 +589,12 @@ export async function main() {
   );
   console.log(
     "into focused steps — each checkable and improvable independently."
+  );
+  console.log(
+    "PatentsView API enriches the analysis with verified prior art metadata,"
+  );
+  console.log(
+    "and MPEP section references give Claude precise statutory anchors."
   );
   console.log(
     "In production: ingest PDFs via a parser, store outputs to a case management"
