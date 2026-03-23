@@ -5,6 +5,7 @@
  * Verifies that each pipeline step sends the correct request structure,
  * handles both the successful JSON parse path and the error path,
  * and that main() orchestrates the full 5-step pipeline.
+ * Also covers loadOfficeAction() for .txt, .pdf, and .docx formats.
  */
 
 const mockCreate = jest.fn();
@@ -18,7 +19,24 @@ jest.mock("@anthropic-ai/sdk", () => ({
 
 jest.mock("dotenv/config", () => ({}));
 
+// ── fs mock ───────────────────────────────────────────────────────────────
+const mockReadFileSync = jest.fn();
+jest.mock("fs", () => ({
+  readFileSync: (...args) => mockReadFileSync(...args),
+}));
+
+// ── pdf-parse mock ────────────────────────────────────────────────────────
+const mockPdfParse = jest.fn();
+jest.mock("pdf-parse", () => mockPdfParse, { virtual: true });
+
+// ── mammoth mock ──────────────────────────────────────────────────────────
+const mockExtractRawText = jest.fn();
+jest.mock("mammoth", () => ({ extractRawText: mockExtractRawText }), {
+  virtual: true,
+});
+
 const {
+  loadOfficeAction,
   parseAndClassify,
   analyzeRejection,
   generateResponseStrategy,
@@ -81,6 +99,71 @@ const SAMPLE_ANALYSIS = {
 describe("05 – Office Action Analyzer", () => {
   beforeEach(() => {
     mockCreate.mockReset();
+    mockReadFileSync.mockReset();
+    mockPdfParse.mockReset();
+    mockExtractRawText.mockReset();
+  });
+
+  // ── loadOfficeAction() ──────────────────────────────────────────────────
+
+  describe("loadOfficeAction()", () => {
+    it("reads plain text from a .txt file", async () => {
+      mockReadFileSync.mockReturnValue("OFFICE ACTION PLAIN TEXT");
+
+      const result = await loadOfficeAction("/path/to/action.txt");
+
+      expect(mockReadFileSync).toHaveBeenCalledWith("/path/to/action.txt", "utf-8");
+      expect(result).toBe("OFFICE ACTION PLAIN TEXT");
+    });
+
+    it("extracts text from a .pdf file using pdf-parse", async () => {
+      const pdfBuffer = Buffer.from("pdf bytes");
+      mockReadFileSync.mockReturnValue(pdfBuffer);
+      mockPdfParse.mockResolvedValue({ text: "EXTRACTED PDF TEXT" });
+
+      const result = await loadOfficeAction("/path/to/action.pdf");
+
+      expect(mockReadFileSync).toHaveBeenCalledWith("/path/to/action.pdf");
+      expect(mockPdfParse).toHaveBeenCalledWith(pdfBuffer);
+      expect(result).toBe("EXTRACTED PDF TEXT");
+    });
+
+    it("extracts text from a .docx file using mammoth", async () => {
+      mockExtractRawText.mockResolvedValue({ value: "EXTRACTED DOCX TEXT" });
+
+      const result = await loadOfficeAction("/path/to/action.docx");
+
+      expect(mockExtractRawText).toHaveBeenCalledWith({
+        path: "/path/to/action.docx",
+      });
+      expect(result).toBe("EXTRACTED DOCX TEXT");
+    });
+
+    it("throws an error for unsupported file formats", async () => {
+      await expect(loadOfficeAction("/path/to/action.rtf")).rejects.toThrow(
+        'Unsupported file format ".rtf"'
+      );
+    });
+
+    it("wraps txt read errors with a helpful message", async () => {
+      mockReadFileSync.mockImplementation(() => {
+        throw new Error("ENOENT: no such file or directory");
+      });
+
+      await expect(loadOfficeAction("/missing/action.txt")).rejects.toThrow(
+        'Failed to read .txt file "/missing/action.txt"'
+      );
+    });
+
+    it("wraps pdf read errors with a helpful message", async () => {
+      mockReadFileSync.mockImplementation(() => {
+        throw new Error("ENOENT: no such file or directory");
+      });
+
+      await expect(loadOfficeAction("/missing/action.pdf")).rejects.toThrow(
+        'Failed to read .pdf file "/missing/action.pdf"'
+      );
+    });
   });
 
   describe("parseAndClassify()", () => {
@@ -365,6 +448,9 @@ describe("05 – Office Action Analyzer", () => {
 
   describe("main()", () => {
     it("logs a failure message and returns early when parse fails", async () => {
+      const originalArgv = process.argv;
+      process.argv = ["node", "05_office_action_analyzer.js"];
+
       const consoleSpy = jest
         .spyOn(console, "log")
         .mockImplementation(() => {});
@@ -384,9 +470,13 @@ describe("05 – Office Action Analyzer", () => {
 
       consoleSpy.mockRestore();
       consoleErrorSpy.mockRestore();
+      process.argv = originalArgv;
     });
 
     it("runs the full pipeline and logs the consolidated outline", async () => {
+      const originalArgv = process.argv;
+      process.argv = ["node", "05_office_action_analyzer.js"];
+
       const consoleSpy = jest
         .spyOn(console, "log")
         .mockImplementation(() => {});
@@ -436,9 +526,13 @@ describe("05 – Office Action Analyzer", () => {
       expect(logOutput).toContain("Observation");
 
       consoleSpy.mockRestore();
+      process.argv = originalArgv;
     });
 
     it("logs application metadata after a successful parse", async () => {
+      const originalArgv = process.argv;
+      process.argv = ["node", "05_office_action_analyzer.js"];
+
       const consoleSpy = jest
         .spyOn(console, "log")
         .mockImplementation(() => {});
@@ -462,6 +556,61 @@ describe("05 – Office Action Analyzer", () => {
       expect(logOutput).toContain("3689");
 
       consoleSpy.mockRestore();
+      process.argv = originalArgv;
+    });
+
+    it("loads office action from a .txt file when a path is supplied via argv", async () => {
+      const originalArgv = process.argv;
+      process.argv = ["node", "05_office_action_analyzer.js", "/tmp/action.txt"];
+
+      const consoleSpy = jest
+        .spyOn(console, "log")
+        .mockImplementation(() => {});
+
+      mockReadFileSync.mockReturnValue("OFFICE ACTION FROM FILE");
+
+      // Step 1 returns invalid JSON so the pipeline exits early — we only care
+      // that the file was read.
+      mockCreate.mockResolvedValueOnce({
+        content: [{ text: "not valid json" }],
+      });
+
+      const consoleErrorSpy = jest
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+
+      await main();
+
+      expect(mockReadFileSync).toHaveBeenCalledWith("/tmp/action.txt", "utf-8");
+      const logOutput = consoleSpy.mock.calls.flat().join("\n");
+      expect(logOutput).toContain("Loading office action from");
+
+      consoleSpy.mockRestore();
+      consoleErrorSpy.mockRestore();
+      process.argv = originalArgv;
+    });
+
+    it("logs an error and returns early when the supplied file cannot be loaded", async () => {
+      const originalArgv = process.argv;
+      process.argv = ["node", "05_office_action_analyzer.js", "/tmp/action.xlsx"];
+
+      const consoleSpy = jest
+        .spyOn(console, "log")
+        .mockImplementation(() => {});
+      const consoleErrorSpy = jest
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
+
+      await main();
+
+      // No API calls should be made when file loading fails.
+      expect(mockCreate).not.toHaveBeenCalled();
+      const errOutput = consoleErrorSpy.mock.calls.flat().join("\n");
+      expect(errOutput).toContain("Failed to load file");
+
+      consoleSpy.mockRestore();
+      consoleErrorSpy.mockRestore();
+      process.argv = originalArgv;
     });
   });
 });

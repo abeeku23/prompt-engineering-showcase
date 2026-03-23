@@ -83,7 +83,10 @@ node 01-zero-shot-vs-few-shot.js
 node 02-chain-of-thought.js
 node 03-prompt-chaining.js
 node 04-system-prompt-and-output-control.js
-node 05_office_action_analyzer.js
+node 05_office_action_analyzer.js                        # uses the built-in sample
+node 05_office_action_analyzer.js path/to/action.txt    # plain-text file
+node 05_office_action_analyzer.js path/to/action.pdf    # PDF
+node 05_office_action_analyzer.js path/to/action.docx   # Word document
 ```
 
 > Each script is self-contained and streams its output to the terminal.
@@ -121,7 +124,7 @@ Processes a raw article through a 3-step pipeline: topic extraction → outline 
 Routes customer support tickets using a weak vs. a strongly engineered system prompt. The strong prompt defines role, constraints, output schema, and decision rules. Result: consistent, machine-parseable JSON across all ticket types — ready for direct API consumption.
 
 ### 05 — Office Action Analyzer & Response Strategist
-Processes a USPTO patent office action through a 5-step pipeline: parse & classify rejections → analyze each rejection's legal strength → generate a response strategy per rejection → suggest specific claim amendment language (§ 103 and § 112 only) → produce a consolidated response outline for the filing attorney. Demonstrates how a domain-specific system prompt combined with prompt chaining can turn unstructured legal text into actionable prosecution strategy. Reinforces techniques from samples 03 and 04 in a real-world IP context.
+Processes a USPTO patent office action through a 5-step pipeline: parse & classify rejections → analyze each rejection's legal strength → generate a response strategy per rejection → suggest specific claim amendment language (§ 103 and § 112 only) → produce a consolidated response outline for the filing attorney. Accepts a plain-text (`.txt`), PDF (`.pdf`), or Word (`.docx`) file as an optional CLI argument; falls back to a built-in sample when no file is supplied. Demonstrates how a domain-specific system prompt combined with prompt chaining can turn unstructured legal text into actionable prosecution strategy. Reinforces techniques from samples 03 and 04 in a real-world IP context.
 
 ---
 
