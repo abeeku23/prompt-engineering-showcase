@@ -25,8 +25,8 @@ A collection of Python scripts demonstrating practical AI engineering patterns u
 ### Install
 
 ```bash
-git clone https://github.com/abeeku23/ai-python-showcase.git
-cd ai-python-showcase
+git clone https://github.com/abeeku23/prompt-engineering-showcase.git
+cd prompt-engineering-showcase/python
 python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```

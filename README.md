@@ -1,10 +1,20 @@
 # Prompt Engineering Showcase
 
-A collection of Node.js scripts demonstrating foundational prompt engineering techniques using the [Anthropic Claude API](https://docs.anthropic.com/). Each example is self-contained, runnable, and includes inline observations comparing the approach to its baseline.
+A collection of AI/LLM prompt engineering examples split into two self-contained sub-projects — one in **Node.js** and one in **Python** — both using the [Anthropic Claude API](https://docs.anthropic.com/).
+
+```
+prompt-engineering-showcase/
+├── node/      ← Node.js examples (prompt techniques, Jest tests)
+└── python/    ← Python examples (data pipelines, tool-use agents)
+```
 
 ---
 
-## Techniques Covered
+## Sub-projects
+
+### [`node/`](./node/README.md) — Node.js Prompt Engineering Showcase
+
+Five self-contained scripts demonstrating foundational prompt engineering techniques:
 
 | # | Script | Technique |
 |---|--------|-----------|
@@ -14,124 +24,43 @@ A collection of Node.js scripts demonstrating foundational prompt engineering te
 | 04 | `04-system-prompt-and-output-control.js` | System Prompt Design & Structured Output |
 | 05 | `05_office_action_analyzer.js` | Multi-Step Pipeline — Patent Office Action Analyzer |
 
----
-
-## Setup
-
-### Prerequisites
-- Node.js v18+
-- An [Anthropic API key](https://console.anthropic.com/)
-
-### 1. Clone the repository
+**Quick start:**
 
 ```bash
-git clone https://github.com/abeeku23/prompt-engineering-showcase.git
-cd prompt-engineering-showcase
-```
-
-### 2. Install dependencies
-
-```bash
+cd node
 npm install
+# Add ANTHROPIC_API_KEY to a .env file
+npm run 01   # run any example
+npm test     # run all tests (no API key needed)
 ```
 
-### 3. Configure your API key
-
-The scripts read your Anthropic API key from the `ANTHROPIC_API_KEY` environment variable.
-
-**Option A — `.env` file (recommended for local development)**
-
-```bash
-# Create a .env file in the project root
-echo 'ANTHROPIC_API_KEY=sk-ant-...' > .env
-```
-
-**Option B — inline environment variable**
-
-```bash
-ANTHROPIC_API_KEY=sk-ant-... node 01-zero-shot-vs-few-shot.js
-```
-
-**Option C — shell export (persists for the current terminal session)**
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-node 01-zero-shot-vs-few-shot.js
-```
-
-> ⚠️ Never commit your `.env` file or API key to version control.
-> The `.gitignore` already excludes `.env` for you.
+See [`node/README.md`](./node/README.md) for full setup instructions and per-example descriptions.
 
 ---
 
-## Running the Examples
+### [`python/`](./python/README.md) — Python AI Showcase
 
-Each script can be run individually with the provided npm shortcuts:
+Five self-contained scripts demonstrating practical AI engineering patterns:
 
-```bash
-npm run 01   # Zero-Shot vs. Few-Shot
-npm run 02   # Chain-of-Thought
-npm run 03   # Prompt Chaining
-npm run 04   # System Prompt & Output Control
-npm run 05   # Office Action Analyzer & Response Strategist
-```
+| # | Script | Theme |
+|---|--------|-------|
+| 01 | `01_document_summarization_pipeline.py` | Document Processing |
+| 02 | `02_structured_data_extraction.py` | Structured Data Extraction |
+| 03 | `03_data_analysis_assistant.py` | Data Analysis with pandas |
+| 04 | `04_visualization_code_generator.py` | Chart Code Generation |
+| 05 | `05_tool_use_agent.py` | Agentic Tool-Use Loop |
 
-Or invoke Node directly:
-
-```bash
-node 01-zero-shot-vs-few-shot.js
-node 02-chain-of-thought.js
-node 03-prompt-chaining.js
-node 04-system-prompt-and-output-control.js
-node 05_office_action_analyzer.js                        # uses the built-in sample
-node 05_office_action_analyzer.js path/to/action.txt    # plain-text file
-node 05_office_action_analyzer.js path/to/action.pdf    # PDF
-node 05_office_action_analyzer.js path/to/action.docx   # Word document
-```
-
-> Each script is self-contained and streams its output to the terminal.
-> Scripts 03 and 05 run multi-step pipelines and may take 10–30 seconds to complete.
-
----
-
-## Running the Tests
-
-The test suite uses [Jest](https://jestjs.io/) and mocks all Anthropic API calls — no API key is required.
+**Quick start:**
 
 ```bash
-# Run all tests
-npm test
-
-# Run tests with coverage report
-npm run test:coverage
-
-# Run a single test file
-npx jest __tests__/05_office_action_analyzer.test.js
+cd python
+python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env   # add your ANTHROPIC_API_KEY
+python 01_document_summarization_pipeline.py
 ```
 
-## What Each Sample Demonstrates
-
-### 01 — Zero-Shot vs. Few-Shot Prompting
-Compares a bare instruction (zero-shot) against a prompt with 3 examples (few-shot) for sentiment analysis. Shows how few-shot examples enforce output format and dramatically improve consistency across runs — critical for any downstream parsing or automation.
-
-### 02 — Chain-of-Thought Reasoning
-Evaluates a hiring candidate against a job description, first with a direct yes/no prompt, then by instructing the model to reason through each requirement step by step. CoT produces auditable, nuanced decisions that surface partial matches a direct prompt would flatten into a binary call.
-
-### 03 — Prompt Chaining (Multi-Step Pipeline)
-Processes a raw article through a 3-step pipeline: topic extraction → outline generation → executive summary. Each step's output feeds the next. Demonstrates how decomposing complex tasks into focused sub-prompts improves reliability and makes individual steps independently debuggable.
-
-### 04 — System Prompt Design & Structured JSON Output
-Routes customer support tickets using a weak vs. a strongly engineered system prompt. The strong prompt defines role, constraints, output schema, and decision rules. Result: consistent, machine-parseable JSON across all ticket types — ready for direct API consumption.
-
-### 05 — Office Action Analyzer & Response Strategist
-Processes a USPTO patent office action through a 5-step pipeline: parse & classify rejections → analyze each rejection's legal strength → generate a response strategy per rejection → suggest specific claim amendment language (§ 103 and § 112 only) → produce a consolidated response outline for the filing attorney. Accepts a plain-text (`.txt`), PDF (`.pdf`), or Word (`.docx`) file as an optional CLI argument; falls back to a built-in sample when no file is supplied. Demonstrates how a domain-specific system prompt combined with prompt chaining can turn unstructured legal text into actionable prosecution strategy. Reinforces techniques from samples 03 and 04 in a real-world IP context.
-
-**API integrations added in this sample:**
-
-| Integration | Purpose |
-|-------------|---------|
-| [PatentsView API](https://search.patentsview.org/docs/docs/Search%20API/SearchAPIReference) | USPTO-backed, free, no auth required. Fetches the title and abstract for every prior-art patent cited by the examiner, so the AI analysis is grounded in actual patent text rather than relying solely on training-data recall. |
-| MPEP section lookup (`getMpepContext`) | Maps each rejection statute (§ 101, 102, 103, 112) to a curated list of relevant MPEP sections (e.g. MPEP § 2106 for Alice/Mayo, MPEP § 2141 for obviousness). These are injected into the Claude analysis prompt so the model cites precise regulatory authority. |
+See [`python/README.md`](./python/README.md) for full setup instructions and per-example descriptions.
 
 ---
 
@@ -142,6 +71,7 @@ Processes a USPTO patent office action through a 5-step pipeline: parse & classi
 - **Prompt chaining** trades simplicity for modularity — each step is easier to test and improve in isolation
 - **System prompt engineering** is where production reliability is built; user-turn prompting alone is rarely sufficient
 - **Domain-specific system prompts** unlock expert-level analysis; combining them with multi-step pipelines makes complex professional workflows tractable
+- **Agentic tool-use loops** let models autonomously decide which tools to call and when to stop — without hallucinating facts
 
 ---
 
