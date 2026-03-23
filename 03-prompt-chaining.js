@@ -35,7 +35,7 @@ const RAW_ARTICLE = `
   well-funded incumbents and emerging players in the space.
 `;
 
-async function callClaude(prompt, context = "") {
+export async function callClaude(prompt, context = "") {
   const response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 500,
@@ -51,7 +51,7 @@ async function callClaude(prompt, context = "") {
 }
 
 // ── PIPELINE ───────────────────────────────────────────────────────────────
-async function runPipeline() {
+export async function runPipeline() {
   // Step 1: Topic extraction
   console.log("⏳ Step 1: Extracting key topics...");
   const topics = await callClaude(
@@ -80,7 +80,7 @@ async function runPipeline() {
 }
 
 // ── MAIN ───────────────────────────────────────────────────────────────────
-async function main() {
+export async function main() {
   console.log("=== PROMPT CHAINING PIPELINE ===");
   console.log("Input: Raw article on AI in drug discovery\n");
 
@@ -95,4 +95,7 @@ async function main() {
   );
 }
 
-main().catch(console.error);
+/* istanbul ignore next */
+if (process.env.NODE_ENV !== "test") {
+  main().catch(console.error);
+}

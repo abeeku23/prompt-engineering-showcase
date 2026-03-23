@@ -52,7 +52,7 @@ Priority guide:
 - low: feature requests, compliments, curiosity
 `.trim();
 
-async function triageWithWeakPrompt(ticket) {
+export async function triageWithWeakPrompt(ticket) {
   const response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 300,
@@ -62,7 +62,7 @@ async function triageWithWeakPrompt(ticket) {
   return response.content[0].text.trim();
 }
 
-async function triageWithStrongPrompt(ticket) {
+export async function triageWithStrongPrompt(ticket) {
   const response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 300,
@@ -81,7 +81,7 @@ async function triageWithStrongPrompt(ticket) {
 }
 
 // ── MAIN ───────────────────────────────────────────────────────────────────
-async function main() {
+export async function main() {
   for (const ticket of TICKETS) {
     console.log("\n" + "=".repeat(60));
     console.log(`TICKET: "${ticket}"`);
@@ -112,4 +112,7 @@ async function main() {
   );
 }
 
-main().catch(console.error);
+/* istanbul ignore next */
+if (process.env.NODE_ENV !== "test") {
+  main().catch(console.error);
+}
