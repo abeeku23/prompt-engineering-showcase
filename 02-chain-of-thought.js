@@ -37,7 +37,7 @@ const CANDIDATE_SUMMARY = `
 `;
 
 // ── WITHOUT CoT ────────────────────────────────────────────────────────────
-async function withoutCoT() {
+export async function withoutCoT() {
   const response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 200,
@@ -53,7 +53,7 @@ async function withoutCoT() {
 }
 
 // ── WITH CoT ───────────────────────────────────────────────────────────────
-async function withCoT() {
+export async function withCoT() {
   const response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 600,
@@ -83,7 +83,7 @@ Let's think through this step by step:`,
 }
 
 // ── MAIN ───────────────────────────────────────────────────────────────────
-async function main() {
+export async function main() {
   console.log("=== WITHOUT CHAIN-OF-THOUGHT ===");
   const direct = await withoutCoT();
   console.log(direct);
@@ -101,4 +101,7 @@ async function main() {
   );
 }
 
-main().catch(console.error);
+/* istanbul ignore next */
+if (process.env.NODE_ENV !== "test") {
+  main().catch(console.error);
+}

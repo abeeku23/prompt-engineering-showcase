@@ -20,7 +20,7 @@ const INPUT_TEXT = `
 `;
 
 // ── ZERO-SHOT ──────────────────────────────────────────────────────────────
-async function zeroShot() {
+export async function zeroShot() {
   const response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 300,
@@ -36,7 +36,7 @@ async function zeroShot() {
 }
 
 // ── FEW-SHOT ───────────────────────────────────────────────────────────────
-async function fewShot() {
+export async function fewShot() {
   const examples = `
 Example 1:
 Review: "Fast shipping and the product looks great, but the sizing runs small and returns are a hassle."
@@ -84,7 +84,7 @@ Output:
 }
 
 // ── MAIN ───────────────────────────────────────────────────────────────────
-async function main() {
+export async function main() {
   console.log("=== INPUT TEXT ===");
   console.log(INPUT_TEXT.trim());
 
@@ -105,4 +105,7 @@ async function main() {
   );
 }
 
-main().catch(console.error);
+/* istanbul ignore next */
+if (process.env.NODE_ENV !== "test") {
+  main().catch(console.error);
+}
