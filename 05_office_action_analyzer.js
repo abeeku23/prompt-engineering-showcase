@@ -105,7 +105,7 @@ Important constraints:
 `.trim();
 
 // ── STEP 1: PARSE AND CLASSIFY ────────────────────────────────────────────
-async function parseAndClassify(officeAction) {
+export async function parseAndClassify(officeAction) {
   console.log("⏳ Step 1: Parsing and classifying rejections...\n");
 
   const response = await client.messages.create({
@@ -159,7 +159,7 @@ ${officeAction}`,
 }
 
 // ── STEP 2: ANALYZE EACH REJECTION ───────────────────────────────────────
-async function analyzeRejection(rejection, officeActionText) {
+export async function analyzeRejection(rejection, officeActionText) {
   const response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 600,
@@ -200,7 +200,7 @@ Respond with valid JSON only. No preamble, no markdown fences.`,
 }
 
 // ── STEP 3: GENERATE RESPONSE STRATEGY ───────────────────────────────────
-async function generateResponseStrategy(rejection, analysis, officeActionText) {
+export async function generateResponseStrategy(rejection, analysis, officeActionText) {
   const response = await client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 800,
@@ -234,7 +234,7 @@ Be specific and actionable. Reference actual claim numbers and prior art referen
 }
 
 // ── STEP 4: SUGGEST CLAIM AMENDMENTS ─────────────────────────────────────
-async function suggestClaimAmendments(rejection, officeActionText) {
+export async function suggestClaimAmendments(rejection, officeActionText) {
   // Only generate amendment suggestions for 103 and 112 rejections
   if (!["103", "112"].includes(rejection.statute)) return null;
 
@@ -266,7 +266,7 @@ Be concrete. If you cannot suggest a specific amendment without seeing the full 
 }
 
 // ── STEP 5: CONSOLIDATED RESPONSE OUTLINE ─────────────────────────────────
-async function generateResponseOutline(parsed, analyses, strategies) {
+export async function generateResponseOutline(parsed, analyses, strategies) {
   const summary = {
     rejections: parsed.rejections.map((r) => ({
       id: r.id,
@@ -307,7 +307,7 @@ Write in professional patent prosecution style.`,
 }
 
 // ── MAIN ──────────────────────────────────────────────────────────────────
-async function main() {
+export async function main() {
   console.log("=".repeat(60));
   console.log("OFFICE ACTION ANALYZER & RESPONSE STRATEGIST");
   console.log("=".repeat(60));
@@ -393,4 +393,7 @@ async function main() {
   );
 }
 
-main().catch(console.error);
+/* istanbul ignore next */
+if (process.env.NODE_ENV !== "test") {
+  main().catch(console.error);
+}

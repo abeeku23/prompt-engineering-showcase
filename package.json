@@ -8,6 +8,7 @@
     "02": "node 02-chain-of-thought.js",
     "03": "node 03-prompt-chaining.js",
     "04": "node 04-system-prompt-and-output-control.js",
+    "05": "node 05_office_action_analyzer.js",
     "test": "jest --config jest.config.cjs",
     "test:coverage": "jest --config jest.config.cjs --coverage"
   },
