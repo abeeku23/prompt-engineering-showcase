@@ -1,0 +1,19 @@
+{
+  "name": "prompt-engineering-showcase",
+  "version": "1.0.0",
+  "description": "A collection of Node.js examples demonstrating core prompt engineering techniques using the Anthropic Claude API.",
+  "type": "module",
+  "scripts": {
+    "01": "node 01-zero-shot-vs-few-shot.js",
+    "02": "node 02-chain-of-thought.js",
+    "03": "node 03-prompt-chaining.js",
+    "04": "node 04-system-prompt-and-output-control.js"
+  },
+  "keywords": ["prompt-engineering", "llm", "anthropic", "claude", "ai"],
+  "author": "Nana Thompson",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "dotenv": "^16.0.0"
+  }
+}
