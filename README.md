@@ -126,6 +126,13 @@ Routes customer support tickets using a weak vs. a strongly engineered system pr
 ### 05 — Office Action Analyzer & Response Strategist
 Processes a USPTO patent office action through a 5-step pipeline: parse & classify rejections → analyze each rejection's legal strength → generate a response strategy per rejection → suggest specific claim amendment language (§ 103 and § 112 only) → produce a consolidated response outline for the filing attorney. Accepts a plain-text (`.txt`), PDF (`.pdf`), or Word (`.docx`) file as an optional CLI argument; falls back to a built-in sample when no file is supplied. Demonstrates how a domain-specific system prompt combined with prompt chaining can turn unstructured legal text into actionable prosecution strategy. Reinforces techniques from samples 03 and 04 in a real-world IP context.
 
+**API integrations added in this sample:**
+
+| Integration | Purpose |
+|-------------|---------|
+| [PatentsView API](https://search.patentsview.org/docs/docs/Search%20API/SearchAPIReference) | USPTO-backed, free, no auth required. Fetches the title and abstract for every prior-art patent cited by the examiner, so the AI analysis is grounded in actual patent text rather than relying solely on training-data recall. |
+| MPEP section lookup (`getMpepContext`) | Maps each rejection statute (§ 101, 102, 103, 112) to a curated list of relevant MPEP sections (e.g. MPEP § 2106 for Alice/Mayo, MPEP § 2141 for obviousness). These are injected into the Claude analysis prompt so the model cites precise regulatory authority. |
+
 ---
 
 ## Key Takeaways

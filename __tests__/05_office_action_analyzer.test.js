@@ -5,7 +5,9 @@
  * Verifies that each pipeline step sends the correct request structure,
  * handles both the successful JSON parse path and the error path,
  * and that main() orchestrates the full 5-step pipeline.
- * Also covers loadOfficeAction() for .txt, .pdf, and .docx formats.
+ * Also covers loadOfficeAction() for .txt, .pdf, and .docx formats,
+ * getMpepContext() for MPEP section lookups, lookupPatentPriorArt() and
+ * fetchPriorArtDetails() for the PatentsView API integration.
  */
 
 const mockCreate = jest.fn();
@@ -35,6 +37,10 @@ jest.mock("mammoth", () => ({ extractRawText: mockExtractRawText }), {
   virtual: true,
 });
 
+// ── fetch mock ────────────────────────────────────────────────────────────
+const mockFetch = jest.fn();
+global.fetch = mockFetch;
+
 const {
   loadOfficeAction,
   parseAndClassify,
@@ -42,6 +48,9 @@ const {
   generateResponseStrategy,
   suggestClaimAmendments,
   generateResponseOutline,
+  getMpepContext,
+  lookupPatentPriorArt,
+  fetchPriorArtDetails,
   main,
 } = require("../05_office_action_analyzer.js");
 
@@ -102,6 +111,7 @@ describe("05 – Office Action Analyzer", () => {
     mockReadFileSync.mockReset();
     mockPdfParse.mockReset();
     mockExtractRawText.mockReset();
+    mockFetch.mockReset();
   });
 
   // ── loadOfficeAction() ──────────────────────────────────────────────────
@@ -613,4 +623,243 @@ describe("05 – Office Action Analyzer", () => {
       process.argv = originalArgv;
     });
   });
+
+  // ── getMpepContext() ──────────────────────────────────────────────────────
+
+  describe("getMpepContext()", () => {
+    it("returns a non-empty string for § 101", () => {
+      const result = getMpepContext("101");
+      expect(result).toContain("MPEP");
+      expect(result).toContain("101");
+      expect(result).toContain("2106");
+    });
+
+    it("returns a non-empty string for § 102", () => {
+      const result = getMpepContext("102");
+      expect(result).toContain("MPEP");
+      expect(result).toContain("102");
+      expect(result).toContain("2131");
+    });
+
+    it("returns a non-empty string for § 103", () => {
+      const result = getMpepContext("103");
+      expect(result).toContain("MPEP");
+      expect(result).toContain("103");
+      expect(result).toContain("2141");
+    });
+
+    it("returns a non-empty string for § 112", () => {
+      const result = getMpepContext("112");
+      expect(result).toContain("MPEP");
+      expect(result).toContain("112");
+      expect(result).toContain("2173");
+    });
+
+    it("returns an empty string for an unknown statute", () => {
+      expect(getMpepContext("999")).toBe("");
+    });
+
+    it("returns an empty string when statute is undefined", () => {
+      expect(getMpepContext(undefined)).toBe("");
+    });
+
+    it("lists multiple MPEP sections for each statute", () => {
+      ["101", "102", "103", "112"].forEach((statute) => {
+        const result = getMpepContext(statute);
+        // Should contain at least 3 bullet points (•)
+        const bulletCount = (result.match(/•/g) ?? []).length;
+        expect(bulletCount).toBeGreaterThanOrEqual(3);
+      });
+    });
+  });
+
+  // ── lookupPatentPriorArt() ────────────────────────────────────────────────
+
+  describe("lookupPatentPriorArt()", () => {
+    it("calls fetch with the normalized patent number and correct URL", async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          patent: {
+            patent_id: "10123456",
+            patent_title: "Fraud Detection System",
+            patent_abstract: "A system for detecting fraud...",
+          },
+        }),
+      });
+
+      await lookupPatentPriorArt("US 10,123,456");
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [url] = mockFetch.mock.calls[0];
+      expect(url).toContain("10123456");
+      expect(url).toContain("patent_title");
+      expect(url).toContain("patent_abstract");
+    });
+
+    it("strips 'US' prefix and commas before querying", async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ patent: { patent_id: "9876543" } }),
+      });
+
+      await lookupPatentPriorArt("US9,876,543");
+
+      const [url] = mockFetch.mock.calls[0];
+      // The normalised patent number should appear without "US" prefix or commas
+      expect(url).toContain("9876543");
+      expect(url).not.toContain("US9");
+      // The patent number segment of the path should have no commas
+      const pathSegment = url.split("?")[0];
+      expect(pathSegment).not.toContain(",");
+    });
+
+    it("returns the patent object on a successful response", async () => {
+      const patentData = {
+        patent_id: "10123456",
+        patent_title: "Fraud Detection System",
+        patent_abstract: "A method and apparatus...",
+      };
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ patent: patentData }),
+      });
+
+      const result = await lookupPatentPriorArt("10123456");
+
+      expect(result).toEqual(patentData);
+    });
+
+    it("returns null when the API responds with a non-OK status", async () => {
+      mockFetch.mockResolvedValue({ ok: false });
+
+      const result = await lookupPatentPriorArt("10123456");
+
+      expect(result).toBeNull();
+    });
+
+    it("returns null when fetch throws a network error", async () => {
+      mockFetch.mockRejectedValue(new Error("Network error"));
+
+      const result = await lookupPatentPriorArt("10123456");
+
+      expect(result).toBeNull();
+    });
+
+    it("returns null when the response has no patent field", async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({}),
+      });
+
+      const result = await lookupPatentPriorArt("99999999");
+
+      expect(result).toBeNull();
+    });
+  });
+
+  // ── fetchPriorArtDetails() ────────────────────────────────────────────────
+
+  describe("fetchPriorArtDetails()", () => {
+    it("fetches details for all unique prior art references across rejections", async () => {
+      const johnsonData = {
+        patent_id: "10123456",
+        patent_title: "Fraud Detection System",
+        patent_abstract: "Abstract for Johnson.",
+      };
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ patent: johnsonData }),
+      });
+
+      const rejections = [
+        { prior_art_references: ["Johnson (US 10,123,456)"] },
+        { prior_art_references: ["Johnson (US 10,123,456)", "Patel (US 9,876,543)"] },
+      ];
+
+      await fetchPriorArtDetails(rejections);
+
+      // Unique references = Johnson + Patel → 2 fetch calls
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it("returns a map keyed by reference string", async () => {
+      const patentData = { patent_id: "10123456", patent_title: "Fraud Detection" };
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ patent: patentData }),
+      });
+
+      const rejections = [{ prior_art_references: ["Johnson (US 10,123,456)"] }];
+      const result = await fetchPriorArtDetails(rejections);
+
+      expect(result).toHaveProperty("Johnson (US 10,123,456)");
+      expect(result["Johnson (US 10,123,456)"]).toEqual(patentData);
+    });
+
+    it("silently skips references that contain no patent number", async () => {
+      const rejections = [{ prior_art_references: ["See general knowledge"] }];
+      const result = await fetchPriorArtDetails(rejections);
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(result).toEqual({});
+    });
+
+    it("skips references for which the API returns null", async () => {
+      mockFetch.mockResolvedValue({ ok: false });
+
+      const rejections = [{ prior_art_references: ["Johnson (US 10,123,456)"] }];
+      const result = await fetchPriorArtDetails(rejections);
+
+      expect(result).toEqual({});
+    });
+
+    it("handles rejections with no prior_art_references field", async () => {
+      const rejections = [{ prior_art_references: [] }, {}];
+      const result = await fetchPriorArtDetails(rejections);
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(result).toEqual({});
+    });
+  });
+
+  // ── analyzeRejection() with enrichmentContext ─────────────────────────────
+
+  describe("analyzeRejection() enrichment context", () => {
+    it("includes enrichmentContext in the prompt when provided", async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ text: JSON.stringify(SAMPLE_ANALYSIS) }],
+      });
+
+      await analyzeRejection(SAMPLE_REJECTION, "OFFICE ACTION TEXT", "MPEP § 2106 — Alice framework");
+
+      const content = mockCreate.mock.calls[0][0].messages[0].content;
+      expect(content).toContain("MPEP § 2106");
+      expect(content).toContain("Additional Context");
+    });
+
+    it("does not include 'Additional Context' section when enrichmentContext is empty", async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ text: JSON.stringify(SAMPLE_ANALYSIS) }],
+      });
+
+      await analyzeRejection(SAMPLE_REJECTION, "OFFICE ACTION TEXT");
+
+      const content = mockCreate.mock.calls[0][0].messages[0].content;
+      expect(content).not.toContain("Additional Context");
+    });
+
+    it("defaults to no enrichment context when the third argument is omitted", async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ text: JSON.stringify(SAMPLE_ANALYSIS) }],
+      });
+
+      // Should not throw and should still call the API
+      const result = await analyzeRejection(SAMPLE_REJECTION, "context");
+
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+      expect(result).toEqual(SAMPLE_ANALYSIS);
+    });
+  });
+
 });
